@@ -1,0 +1,30 @@
+services:
+  images_app:
+    build:
+      context: .
+      dockerfile: ${APP_BUILD_PATH}
+    restart: always
+    ports:
+      - ${LOCAL_APP_PORT}:${LOCAL_APP_PORT}
+    volumes:
+      - /var/lib/docker/volumes/images
+    env_file:
+      - .env
+    container_name: images-app
+
+  postgres_db:
+    image: postgres
+    restart: always
+    ports:
+      - ${DB_PORT}:${DB_PORT}
+    environment:
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
+      - POSTGRES_DB=${DB_NAME}
+      - POSTGRES_SSL_MODE=${SSL_MODE}
+    volumes:
+      - /var/lib/postgresql/18/docker
+    env_file:
+      - .env
+    container_name: postgres-db
+    
