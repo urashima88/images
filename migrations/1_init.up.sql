@@ -6,6 +6,7 @@ CREATE TABLE IF NOT EXISTS images (
     image_id TEXT NOT NULL CHECK (image_id <> ''),
     width INTEGER NOT NULL CHECK (width > 0),
     height INTEGER NOT NULL CHECK (height > 0),
+    extension VARCHAR NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     score INTEGER NOT NULL DEFAULT 0
@@ -18,7 +19,7 @@ CREATE INDEX IF NOT EXISTS images_score_idx ON images (score);
 
 CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL CHECK (name <> ''),
+    name TEXT NOT NULL UNIQUE CHECK (name <> ''),
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
@@ -35,4 +36,30 @@ CREATE TABLE image_tags (
     CONSTRAINT fk_image_tags_tags FOREIGN KEY (tag_id) REFERENCES tags(id) ON DELETE CASCADE
 );
 
+CREATE INDEX IF NOT EXISTS image_tags_image_id_idx ON image_tags (image_id);
+CREATE INDEX IF NOT EXISTS image_tags_tag_id_idx ON image_tags (tag_id);
 
+CREATE TABLE IF NOT EXISTS album_images (
+    album_id UUID NOT NULL,
+    image_id UUID NOT NULL,
+    saved_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+
+    PRIMARY KEY (album_id, image_id),
+
+    CONSTRAINT fk_album_images_images FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS album_images_album_id_idx ON album_images (album_id);
+CREATE INDEX IF NOT EXISTS album_images_image_id_idx ON album_images (image_id);
+
+CREATE TABLE IF NOT EXISTS post_images (
+    post_id UUID NOT NULL,
+    image_id UUID NOT NULL,
+
+    PRIMARY KEY (post_id, image_id),
+
+    CONSTRAINT fk_post_images_images FOREIGN KEY (image_id) REFERENCES images(id) ON DELETE CASCADE
+);
+
+CREATE INDEX IF NOT EXISTS post_images_post_id_idx ON post_images (post_id);
+CREATE INDEX IF NOT EXISTS post_images_image_id_idx ON post_images (image_id);

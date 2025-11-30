@@ -4,6 +4,7 @@ import (
 	"flag"
 	"os"
 	"slices"
+	"strconv"
 	"strings"
 	"time"
 
@@ -14,6 +15,9 @@ type Config struct {
 	Env string
 	Db
 	HTTPServer
+	ImageMeta
+	FileServer
+	TagMeta
 }
 
 type HTTPServer struct {
@@ -30,6 +34,22 @@ type Db struct {
 	Password string
 	Name     string
 	SSLMode  string
+}
+
+type ImageMeta struct {
+	MaxImageSize        int
+	MaxMemory           int64
+	PostMaxNumberImages int
+	ImageDirectory      string
+}
+
+type FileServer struct {
+	Host        string
+	CacheMaxAge string
+}
+
+type TagMeta struct {
+	MaxTagLength int
 }
 
 var envs = []string{"local", "dev", "prod"}
@@ -65,6 +85,26 @@ func MustLoad() *Config {
 	cfg.Db.Name = os.Getenv("DB_NAME")
 	cfg.Db.SSLMode = os.Getenv("SSL_MODE")
 
+	if cfg.MaxImageSize, err = strconv.Atoi(os.Getenv("MAX_IMAGE_SIZE")); err != nil {
+		panic("error conversion max image size")
+	}
+
+	if cfg.ImageMeta.MaxMemory, err = strconv.ParseInt(os.Getenv("MAX_MEMORY"), 10, 64); err != nil {
+		panic("error parsing max memory")
+	}
+	if cfg.ImageMeta.PostMaxNumberImages, err = strconv.Atoi(os.Getenv("POST_MAX_NUMBER_IMAGES")); err != nil {
+		panic("error conversion post max number images")
+	}
+
+	cfg.ImageMeta.ImageDirectory = os.Getenv("IMAGE_DIRECTORY")
+
+	cfg.FileServer.Host = os.Getenv("FILE_SERVER_HOST")
+	cfg.FileServer.CacheMaxAge = os.Getenv("CACHE_MAX_AGE")
+
+	if cfg.TagMeta.MaxTagLength, err = strconv.Atoi(os.Getenv("MAX_TAG_LENGTH")); err != nil {
+		panic("error conversion max tag length")
+	}
+
 	return &cfg
 }
 
@@ -77,7 +117,7 @@ func GetHTTPServerEnv(env string, cfg *Config) {
 		panic("error parsing timeout duration")
 	}
 	if cfg.HTTPServer.IdleTimeout, err = time.ParseDuration(os.Getenv(env + "_IDLE_TIMEOUT")); err != nil {
-		panic("error parsing idle timeout")
+		panic("error parsing idle timeout duration")
 	}
 
 }

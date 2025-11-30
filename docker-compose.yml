@@ -6,8 +6,8 @@ services:
     restart: always
     ports:
       - ${LOCAL_APP_PORT}:${LOCAL_APP_PORT}
-    volumes:
-      - /var/lib/docker/volumes/images
+    environment:
+      - DB_HOST=postgres-db # container_name of db
     env_file:
       - .env
     container_name: images-app

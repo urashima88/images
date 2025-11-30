@@ -8,6 +8,8 @@ RUN go mod download
 
 COPY . . 
 
+RUN mkdir -p ./images
+
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /images-app ./cmd/app/
 
 FROM alpine AS build-release-stage

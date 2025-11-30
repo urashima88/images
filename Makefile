@@ -4,6 +4,15 @@ run:
 up:
 	docker-compose up -d
 
+build:
+	docker-compose up --build
+
+build-app:
+	docker-compose up --build images_app
+
+build-db:
+	docker-compose up --build postgres_db
+
 MIGRATE_RUN = go run ./cmd/migrator --config=.env --migrations-path=./migrations
 
 migrate:
