@@ -6,7 +6,7 @@ import (
 	file_server_load "images/internal/app/handlers/file-server/load"
 	post_images_download "images/internal/app/handlers/post-images/download"
 	post_images_upload "images/internal/app/handlers/post-images/upload"
-	tags_create "images/internal/app/handlers/tags/create"
+	tags_attach "images/internal/app/handlers/tags/attach"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
@@ -61,7 +61,7 @@ func main() {
 	})
 
 	router.Route("/tags", func(r chi.Router) {
-		r.Post("/create", tags_create.New(log, tagService, storage))
+		r.Post("/attach", tags_attach.New(log, tagService, storage))
 	})
 
 	router.Handle("/images/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))

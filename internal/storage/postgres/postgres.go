@@ -128,8 +128,8 @@ func (s *Storage) ValidateImageOwnership(profileID, imageID string) (bool, error
 	return exists, nil
 }
 
-func (s *Storage) CreateImageTags(imageID string, tagNames []string) ([]tag.Tag, error) {
-	const op = "storage.postgres.CreateImageTags"
+func (s *Storage) UpdateImageTags(imageID string, tagNames []string) ([]tag.Tag, error) {
+	const op = "storage.postgres.UpdateImageTags"
 
 	tx, err := s.db.Begin()
 	if err != nil {
@@ -148,9 +148,9 @@ func (s *Storage) CreateImageTags(imageID string, tagNames []string) ([]tag.Tag,
 		return nil, fmt.Errorf("%s: failed to get/save tags: %w", op, err)
 	}
 
-	err = s.SaveImageTags(tx, id, tagIDs)
+	err = s.UpdateImageTagsRelations(tx, id, tagIDs)
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to save image-tag relations: %w", op, err)
+		return nil, fmt.Errorf("%s: failed to update image-tag relations: %w", op, err)
 	}
 
 	createdTags, err := s.GetTagsByIDs(tx, tagIDs)
@@ -232,22 +232,27 @@ func (s *Storage) GetOrSaveTags(tx *sql.Tx, tagNames []string) ([]string, error)
 	return tagIDs, nil
 }
 
-func (s *Storage) SaveImageTags(tx *sql.Tx, imageID string, tagIDs []string) error {
-	const op = "storage.postgres.SaveImageTags"
+func (s *Storage) UpdateImageTagsRelations(tx *sql.Tx, imageID string, tagIDs []string) error {
+	const op = "storage.postgres.UpdateImageTagsRelations"
+
+	deleteQuery := `DELETE FROM image_tags WHERE image_id = $1`
+	_, err := tx.Exec(deleteQuery, imageID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to delete old tags: %w", op, err)
+	}
 
 	if len(tagIDs) == 0 {
 		return nil
 	}
 
-	query := `
+	insertQuery := `
 		INSERT INTO image_tags (image_id, tag_id)
 		SELECT $1, unnest($2::uuid[])
-		ON CONFLICT (image_id, tag_id) DO NOTHING
 	`
 
-	_, err := tx.Exec(query, imageID, pq.Array(tagIDs))
+	_, err = tx.Exec(insertQuery, imageID, pq.Array(tagIDs))
 	if err != nil {
-		return fmt.Errorf("%s: failed to insert into image_tags table: %w", op, err)
+		return fmt.Errorf("%s: failed to insert into new tags: %w", op, err)
 	}
 	return nil
 }

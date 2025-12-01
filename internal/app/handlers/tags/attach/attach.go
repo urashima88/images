@@ -1,4 +1,4 @@
-package tags_create
+package tags_attach
 
 import (
 	"images/internal/lib/api/response"
@@ -21,16 +21,16 @@ type Response struct {
 	Tags    []tag.Tag `json:"tags"`
 }
 
-type TagCreator interface {
+type TagUpdater interface {
 	CleanAndValidateTags(tags []string) []string
 }
 
-type TagDBCreator interface {
+type TagDBUpdater interface {
 	ValidateImageOwnership(profileID, imageID string) (bool, error)
-	CreateImageTags(imageID string, tagNames []string) ([]tag.Tag, error)
+	UpdateImageTags(imageID string, tagNames []string) ([]tag.Tag, error)
 }
 
-func New(log *slog.Logger, tagCreator TagCreator, tagDBCreator TagDBCreator) http.HandlerFunc {
+func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.tags.create.New"
 
@@ -99,11 +99,11 @@ func New(log *slog.Logger, tagCreator TagCreator, tagDBCreator TagDBCreator) htt
 			slog.String("image_id", imageID),
 			slog.Int("tags_count", len(cleanedTags)))
 
-		createdTags, err := tagDBCreator.CreateImageTags(imageID, cleanedTags)
+		createdTags, err := tagDBCreator.UpdateImageTags(imageID, cleanedTags)
 		if err != nil {
-			log.Error("failed to create tags")
+			log.Error("failed to update tags")
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, response.Error("failed to create tags"))
+			render.JSON(w, r, response.Error("failed to update tags"))
 			return
 		}
 
