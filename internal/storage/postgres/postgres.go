@@ -292,3 +292,58 @@ func (s *Storage) GetTagsByIDs(tx *sql.Tx, tagIDs []string) ([]tag.Tag, error) {
 
 	return tags, nil
 }
+
+func (s *Storage) GetTagsByImageID(imageID string) ([]tag.Tag, error) {
+	const op = "storage.postgres.GetTagsByImageID"
+
+	query := `
+		SELECT t.id, t.name, t.created_at
+		FROM tags t
+		INNER JOIN image_tags it ON t.id = it.tag_id
+		INNER JOIN images i ON it.image_id = i.id
+		WHERE i.image_id = $1
+		ORDER BY t.name ASC
+	`
+
+	rows, err := s.db.Query(query, imageID)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to query image tags: %w", op, err)
+	}
+	defer rows.Close()
+
+	var tags []tag.Tag
+	for rows.Next() {
+		var t tag.Tag
+		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil {
+			return nil, fmt.Errorf("%s: failed to scan tag: %w", op, err)
+		}
+		tags = append(tags, t)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
+	}
+	return tags, nil
+}
+
+func (s *Storage) UpdateImageScore(imageID string, value int) (int, error) {
+	const op = "storage.postgres.UpdateImageScore"
+
+	query := `
+		UPDATE images
+		SET
+			score = score + $1,
+			updated_at = NOW()
+		WHERE image_id = $2
+		RETURNING score
+	`
+	var newScore int
+	err := s.db.QueryRow(query, value, imageID).Scan(&newScore)
+	if err != nil {
+		if err == sql.ErrNoRows {
+			return 0, fmt.Errorf("%s: image_id=%s not found", op, imageID)
+		}
+		return 0, fmt.Errorf("%s: failed to update image score: %w", op, err)
+	}
+	return newScore, nil
+}

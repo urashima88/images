@@ -5,8 +5,10 @@ import (
 	"fmt"
 	file_server_load "images/internal/app/handlers/file-server/load"
 	post_images_download "images/internal/app/handlers/post-images/download"
+	post_images_score_update "images/internal/app/handlers/post-images/score/update"
 	post_images_upload "images/internal/app/handlers/post-images/upload"
-	tags_attach "images/internal/app/handlers/tags/attach"
+	tags_images_attach "images/internal/app/handlers/tags/images/attach"
+	tags_images_get "images/internal/app/handlers/tags/images/get"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
@@ -58,10 +60,16 @@ func main() {
 	router.Route("/post-images", func(r chi.Router) {
 		r.Post("/upload", post_images_upload.New(log, imageService, storage, &cfg.ImageMeta))
 		r.Get("/download", post_images_download.New(log, imageService, storage))
+		r.Route("/score", func(r chi.Router) {
+			r.Put("/update", post_images_score_update.New(log, storage))
+		})
 	})
 
 	router.Route("/tags", func(r chi.Router) {
-		r.Post("/attach", tags_attach.New(log, tagService, storage))
+		r.Route("/images", func(r chi.Router) {
+			r.Post("/attach", tags_images_attach.New(log, tagService, storage))
+			r.Get("/get", tags_images_get.New(log, storage))
+		})
 	})
 
 	router.Handle("/images/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))

@@ -1,4 +1,4 @@
-package tags_attach
+package tags_images_attach
 
 import (
 	"images/internal/lib/api/response"
@@ -32,7 +32,7 @@ type TagDBUpdater interface {
 
 func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.tags.create.New"
+		const op = "handlers.tags.images.attach.New"
 
 		log = log.With(
 			slog.String("op", op),
