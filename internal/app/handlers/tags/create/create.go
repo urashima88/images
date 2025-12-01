@@ -1,4 +1,4 @@
-package create_tags
+package tags_create
 
 import (
 	"images/internal/lib/api/response"
@@ -32,7 +32,7 @@ type TagDBCreator interface {
 
 func New(log *slog.Logger, tagCreator TagCreator, tagDBCreator TagDBCreator) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.create_tag.New"
+		const op = "handlers.tags.create.New"
 
 		log = log.With(
 			slog.String("op", op),

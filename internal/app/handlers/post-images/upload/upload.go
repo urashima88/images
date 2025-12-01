@@ -1,4 +1,4 @@
-package upload_post_images
+package post_images_upload
 
 import (
 	"fmt"
@@ -43,7 +43,7 @@ type ImageDBUploader interface {
 
 func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.upload_post_images.New"
+		const op = "handlers.post_images.upload.New"
 
 		log = log.With(
 			slog.String("op", op),

@@ -1,4 +1,4 @@
-package download_post_images
+package post_images_download
 
 import (
 	"images/internal/lib/api/image"
@@ -26,7 +26,7 @@ type ImageDBDownloader interface {
 
 func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader ImageDBDownloader) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.download_post_images.New"
+		const op = "handlers.post_images.download.New"
 
 		log = log.With(
 			slog.String("op", op),

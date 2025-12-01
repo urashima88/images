@@ -3,10 +3,10 @@ package main
 import (
 	"context"
 	"fmt"
-	create_tags "images/internal/app/handlers/create-tags"
-	download_post_images "images/internal/app/handlers/download/download-post-images"
-	"images/internal/app/handlers/load"
-	upload_post_images "images/internal/app/handlers/upload/upload-post-images"
+	file_server_load "images/internal/app/handlers/file-server/load"
+	post_images_download "images/internal/app/handlers/post-images/download"
+	post_images_upload "images/internal/app/handlers/post-images/upload"
+	tags_create "images/internal/app/handlers/tags/create"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
@@ -55,19 +55,16 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	router.Route("/upload", func(r chi.Router) {
-		r.Post("/post-images", upload_post_images.New(log, imageService, storage, &cfg.ImageMeta))
-	})
-
-	router.Route("/download", func(r chi.Router) {
-		r.Get("/post-images", download_post_images.New(log, imageService, storage))
+	router.Route("/post-images", func(r chi.Router) {
+		r.Post("/upload", post_images_upload.New(log, imageService, storage, &cfg.ImageMeta))
+		r.Get("/download", post_images_download.New(log, imageService, storage))
 	})
 
 	router.Route("/tags", func(r chi.Router) {
-		r.Post("/create", create_tags.New(log, tagService, storage))
+		r.Post("/create", tags_create.New(log, tagService, storage))
 	})
 
-	router.Handle("/images/*", http.StripPrefix("/images/", load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
+	router.Handle("/images/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Host+":"+cfg.HTTPServer.Port))
 

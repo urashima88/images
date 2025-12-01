@@ -1,4 +1,4 @@
-package load
+package file_server_load
 
 import (
 	"fmt"
