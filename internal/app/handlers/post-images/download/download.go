@@ -1,6 +1,8 @@
 package post_images_download
 
 import (
+	"fmt"
+	app_config "images/internal/config/app-config"
 	"images/internal/lib/api/image"
 	"images/internal/lib/api/response"
 	"log/slog"
@@ -8,23 +10,27 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
-	"github.com/google/uuid"
 )
+
+type Request struct {
+	ImageIDs []string `json:"image_ids"`
+}
 
 type Response struct {
 	response.Response
-	Images []image.DownloadImageResponse
+	Images []image.DownloadImageResponse `json:"images"`
 }
 
 type ImageDownloader interface {
+	CleanImageIDs(imageIDs []string) []string
 	GetImageURL(imageID, extension string) string
 }
 
 type ImageDBDownloader interface {
-	GetImagesByPostID(postID string) ([]image.DownloadImageResponse, error)
+	GetImagesByIDs(imageIDs []string) ([]image.DownloadImageResponse, error)
 }
 
-func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader ImageDBDownloader) http.HandlerFunc {
+func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader ImageDBDownloader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.post_images.download.New"
 
@@ -33,33 +39,48 @@ func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader Im
 			slog.String("request_id", middleware.GetReqID(r.Context())),
 		)
 
-		postID := r.Header.Get("X-Post-ID")
-		if postID == "" {
-			log.Error("post_id header is required")
+		var req Request
+		if err := render.DecodeJSON(r.Body, &req); err != nil {
+			log.Error("failed to decode request body")
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("post_id header os required"))
+			render.JSON(w, r, response.Error("invalid request body"))
 			return
 		}
 
-		if _, err := uuid.Parse(postID); err != nil {
-			log.Error("invalid post_id format", slog.String("post_id", postID))
+		if len(req.ImageIDs) == 0 {
+			log.Error("no image_ids provided")
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("invalid post_id format"))
+			render.JSON(w, r, response.Error("at least one image_id is required"))
 			return
 		}
 
-		log.Info("fetching post images", slog.String("post_id", postID))
+		if len(req.ImageIDs) > imageMeta.PostMaxNumberImages {
+			log.Error("too many image_ids", slog.Int("count", len(req.ImageIDs)))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images for post", imageMeta.PostMaxNumberImages)))
+			return
+		}
 
-		imageInfos, err := imageDBDownloader.GetImagesByPostID(postID)
+		cleanedImageIDs := ImageDownloader.CleanImageIDs(req.ImageIDs)
+		if len(cleanedImageIDs) == 0 {
+			log.Error("all image_ids are invalid")
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, response.Error("all provided image_ids are invalid"))
+			return
+		}
+
+		log.Info("featching images info", slog.Int("image_ids_count", len(cleanedImageIDs)))
+
+		imageInfos, err := imageDBDownloader.GetImagesByIDs(cleanedImageIDs)
 		if err != nil {
-			log.Error("failed to get post images", slog.String("post_id", postID))
+			log.Error("failed to get images info")
 			render.Status(r, http.StatusInternalServerError)
-			render.JSON(w, r, response.Error("failed to get post images"))
+			render.JSON(w, r, response.Error("failed to get images info"))
 			return
 		}
 
 		if len(imageInfos) == 0 {
-			log.Info("no images found for post", slog.String("post_id", postID))
+			log.Info("no images found", slog.Int("requested_count", len(cleanedImageIDs)))
 			render.JSON(w, r, Response{
 				Response: response.OK(),
 				Images:   []image.DownloadImageResponse{},
@@ -75,13 +96,15 @@ func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader Im
 				Height:    info.Height,
 				Extension: info.Extension,
 				Score:     info.Score,
+				Tags:      info.Tags,
+				CreatedAt: info.CreatedAt,
 				FileURL:   ImageDownloader.GetImageURL(info.ImageID, info.Extension),
 			}
 		}
 
-		log.Info("post images retrieved successfully",
-			slog.String("post_id", postID),
-			slog.Int("images_count", len(imagesResponse)))
+		log.Info("images retrieved successfully",
+			slog.Int("requested_count", len(cleanedImageIDs)),
+			slog.Int("found_count", len(imagesResponse)))
 
 		render.JSON(w, r, Response{
 			Response: response.OK(),

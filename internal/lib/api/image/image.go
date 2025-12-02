@@ -21,6 +21,7 @@ type DownloadImageResponse struct {
 	Height    int       `json:"height"`
 	Score     int       `json:"score"`
 	Extension string    `json:"extension"`
+	Tags      []string  `json:"tags"`
 	CreatedAt time.Time `json:"created_at"`
 	FileURL   string    `json:"file_url,omitempty"`
 }

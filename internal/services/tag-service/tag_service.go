@@ -24,7 +24,7 @@ func (t *TagService) CleanAndValidateTags(tags []string) []string {
 	var cleaned []string
 	seen := make(map[string]bool)
 
-loop:
+	continueTagLoop := false
 	for _, tag := range tags {
 		tag = strings.TrimSpace(tag)
 		tag = strings.ToLower(tag)
@@ -41,8 +41,12 @@ loop:
 
 		for _, char := range t.ForbiddenChars {
 			if strings.Contains(tag, char) {
-				continue loop
+				continueTagLoop = true
+				break
 			}
+		}
+		if continueTagLoop {
+			continue
 		}
 
 		if !seen[tag] {

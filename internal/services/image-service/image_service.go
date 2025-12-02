@@ -6,6 +6,7 @@ import (
 	"image"
 	"os"
 	"path/filepath"
+	"strings"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -49,6 +50,24 @@ func (i *ImageService) SaveImageToDisk(imageData []byte, imageDir, fileName stri
 	}
 
 	return nil
+}
+
+func (i *ImageService) CleanImageIDs(imageIDs []string) []string {
+	var cleaned []string
+	seen := make(map[string]bool)
+
+	for _, id := range imageIDs {
+		id := strings.TrimSpace(id)
+		if id == "" {
+			continue
+		}
+
+		if !seen[id] {
+			seen[id] = true
+			cleaned = append(cleaned, id)
+		}
+	}
+	return cleaned
 }
 
 func (i *ImageService) GetImageURL(imageID, extension string) string {

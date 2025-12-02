@@ -34,78 +34,70 @@ func New(cfg *app_config.Config) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string) (string, error) {
+func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string) error {
 	const op = "storage.postgres.SaveImage"
 
 	query := `
 		INSERT INTO images (profile_id, image_id, width, height, extension)
 		VALUES ($1, $2, $3, $4, $5)
-		RETURNING id
-	`
-	var id string
-	err := s.db.QueryRow(query, profileID, imageID, width, height, extension).Scan(&id)
-	if err != nil {
-		return "", fmt.Errorf("%s: failed to insert into images table: %w", op, err)
-	}
-
-	return id, nil
-}
-
-func (s *Storage) SavePostImage(postID, imageID string) error {
-	const op = "storage.postgres.SavePostImage"
-
-	query := `
-		INSERT INTO post_images (post_id, image_id)
-		VALUES ($1, $2)
-		ON CONFLICT (post_id, image_id) DO NOTHING
 	`
 
-	_, err := s.db.Exec(query, postID, imageID)
+	_, err := s.db.Exec(query, profileID, imageID, width, height, extension)
 	if err != nil {
-		return fmt.Errorf("%s: failed to insert into post_images table: %w", op, err)
+		return fmt.Errorf("%s: failed to insert into images table: %w", op, err)
 	}
 
 	return nil
 }
 
-func (s *Storage) GetImagesByPostID(postID string) ([]image.DownloadImageResponse, error) {
+func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.DownloadImageResponse, error) {
 	const op = "storage.postgres.GetImagesByPostID"
 
 	query := `
-		SELECT i.image_id, i.width, i.height, i.extension, i.score, i.created_at
-		FROM post_images pi
-		JOIN images i 
-		ON pi.image_id = i.id
-		WHERE pi.post_id = $1
+		SELECT i.image_id, i.width, i.height, i.extension, i.score, i.created_at,
+		COALESCE (
+			ARRAY_AGG(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}'::text[]
+		) AS tags
+		FROM images i
+		LEFT JOIN image_tags it ON i.id = it.image_id
+		LEFT JOIN tags t ON it.tag_id = t.id
+		WHERE i.image_id = ANY($1)
+		GROUP BY i.id, i.image_id, i.width, i.height, i.extension, i.score, i.created_at
 		ORDER BY i.created_at ASC
 	`
 
-	rows, err := s.db.Query(query, postID)
+	rows, err := s.db.Query(query, pq.Array(imageIDs))
 	if err != nil {
-		return nil, fmt.Errorf("%s: failed to query post images: %w", op, err)
+		return nil, fmt.Errorf("%s: failed to query images by ids: %w", op, err)
 	}
 	defer rows.Close()
 
 	var images []image.DownloadImageResponse
 	for rows.Next() {
 		var img image.DownloadImageResponse
-		var createdAt sql.NullTime
-		err := rows.Scan(&img.ImageID, &img.Width, &img.Height, &img.Extension, &img.Score, &createdAt)
+		var tags []string
+
+		err := rows.Scan(
+			&img.ImageID,
+			&img.Width,
+			&img.Height,
+			&img.Extension,
+			&img.Score,
+			&img.CreatedAt,
+			pq.Array(&tags),
+		)
 		if err != nil {
-			slog.Error("failed to scan image row", slog.String("op", op), slog.String("error", err.Error()))
+			slog.Error("failed to scan image row",
+				slog.String("op", op),
+				slog.String("error", err.Error()))
 			continue
 		}
-
-		if createdAt.Valid {
-			img.CreatedAt = createdAt.Time
-		}
+		img.Tags = tags
 		images = append(images, img)
 	}
-
 	if err := rows.Err(); err != nil {
 		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
 	}
-
 	return images, nil
 }
 
@@ -290,39 +282,6 @@ func (s *Storage) GetTagsByIDs(tx *sql.Tx, tagIDs []string) ([]tag.Tag, error) {
 		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
 	}
 
-	return tags, nil
-}
-
-func (s *Storage) GetTagsByImageID(imageID string) ([]tag.Tag, error) {
-	const op = "storage.postgres.GetTagsByImageID"
-
-	query := `
-		SELECT t.id, t.name, t.created_at
-		FROM tags t
-		INNER JOIN image_tags it ON t.id = it.tag_id
-		INNER JOIN images i ON it.image_id = i.id
-		WHERE i.image_id = $1
-		ORDER BY t.name ASC
-	`
-
-	rows, err := s.db.Query(query, imageID)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to query image tags: %w", op, err)
-	}
-	defer rows.Close()
-
-	var tags []tag.Tag
-	for rows.Next() {
-		var t tag.Tag
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("%s: failed to scan tag: %w", op, err)
-		}
-		tags = append(tags, t)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
-	}
 	return tags, nil
 }
 

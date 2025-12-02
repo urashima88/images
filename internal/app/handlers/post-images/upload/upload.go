@@ -37,8 +37,7 @@ type ImageUploader interface {
 }
 
 type ImageDBUploader interface {
-	SaveImage(profileID, imageID string, width, height int, extension string) (string, error)
-	SavePostImage(postID, imageID string) error
+	SaveImage(profileID, imageID string, width, height int, extension string) error
 }
 
 func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
@@ -51,7 +50,6 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 		)
 
 		profileID := r.Header.Get("X-Profile-ID")
-		postID := r.Header.Get("X-Post-ID")
 
 		if profileID == "" {
 			log.Error("profile_id header is required")
@@ -60,24 +58,10 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			return
 		}
 
-		if postID == "" {
-			log.Error("post_id header is required")
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("post_id header is required"))
-			return
-		}
-
 		if _, err := uuid.Parse(profileID); err != nil {
 			log.Error("invalid profile_id format", slog.String("profile_id", profileID))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, response.Error("invalid profile_id format"))
-			return
-		}
-
-		if _, err := uuid.Parse(postID); err != nil {
-			log.Error("invalid post_id format", slog.String("post_id", postID))
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("invalid post_id format"))
 			return
 		}
 
@@ -110,7 +94,7 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 		var failedImages []image.FailedImageResponse
 
 		for i, fileHeader := range files {
-			img, err := processImage(fileHeader, profileID, postID, imageUploader, imageDBUploader, imageMeta)
+			img, err := processImage(fileHeader, profileID, imageUploader, imageDBUploader, imageMeta)
 			if err != nil {
 				failedImages = append(failedImages, image.FailedImageResponse{
 					FileName: fileHeader.Filename,
@@ -172,7 +156,7 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 
 func processImage(
 	fileHeader *multipart.FileHeader,
-	profileID, postID string,
+	profileID string,
 	imageUploader ImageUploader,
 	imageDBUploader ImageDBUploader,
 	imageMeta *app_config.ImageMeta,
@@ -206,14 +190,9 @@ func processImage(
 		return image.UploadImage{}, fmt.Errorf("%s: failed to get image dimensions: %w", op, err)
 	}
 
-	id, err := imageDBUploader.SaveImage(profileID, imageID, width, height, extension)
+	err = imageDBUploader.SaveImage(profileID, imageID, width, height, extension)
 	if err != nil {
 		return image.UploadImage{}, fmt.Errorf("%s: failed to save image to DB: %w", op, err)
-	}
-
-	err = imageDBUploader.SavePostImage(postID, id)
-	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s: failed to save post image relation: %w", op, err)
 	}
 
 	fileName := imageID + filepath.Ext(fileHeader.Filename)

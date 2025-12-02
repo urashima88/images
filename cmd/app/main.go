@@ -8,7 +8,6 @@ import (
 	post_images_score_update "images/internal/app/handlers/post-images/score/update"
 	post_images_upload "images/internal/app/handlers/post-images/upload"
 	tags_images_attach "images/internal/app/handlers/tags/images/attach"
-	tags_images_get "images/internal/app/handlers/tags/images/get"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
@@ -59,7 +58,7 @@ func main() {
 
 	router.Route("/post-images", func(r chi.Router) {
 		r.Post("/upload", post_images_upload.New(log, imageService, storage, &cfg.ImageMeta))
-		r.Get("/download", post_images_download.New(log, imageService, storage))
+		r.Post("/download", post_images_download.New(log, imageService, storage, &cfg.ImageMeta))
 		r.Route("/score", func(r chi.Router) {
 			r.Put("/update", post_images_score_update.New(log, storage))
 		})
@@ -68,7 +67,6 @@ func main() {
 	router.Route("/tags", func(r chi.Router) {
 		r.Route("/images", func(r chi.Router) {
 			r.Post("/attach", tags_images_attach.New(log, tagService, storage))
-			r.Get("/get", tags_images_get.New(log, storage))
 		})
 	})
 
