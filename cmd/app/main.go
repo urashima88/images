@@ -56,12 +56,13 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	router.Route("/post-images", func(r chi.Router) {
+	router.Route("/images", func(r chi.Router) {
 		r.Post("/upload", post_images_upload.New(log, imageService, storage, &cfg.ImageMeta))
-		r.Post("/download", post_images_download.New(log, imageService, storage, &cfg.ImageMeta))
+		r.Post("/info", post_images_download.New(log, imageService, storage, &cfg.ImageMeta))
 		r.Route("/score", func(r chi.Router) {
 			r.Put("/update", post_images_score_update.New(log, storage))
 		})
+		r.Handle("/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
 	})
 
 	router.Route("/tags", func(r chi.Router) {
@@ -69,8 +70,6 @@ func main() {
 			r.Post("/attach", tags_images_attach.New(log, tagService, storage))
 		})
 	})
-
-	router.Handle("/images/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Host+":"+cfg.HTTPServer.Port))
 
