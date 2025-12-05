@@ -4,9 +4,8 @@ import (
 	"context"
 	"fmt"
 	file_server_load "images/internal/app/handlers/file-server/load"
-	post_images_download "images/internal/app/handlers/post-images/download"
-	post_images_score_update "images/internal/app/handlers/post-images/score/update"
-	post_images_upload "images/internal/app/handlers/post-images/upload"
+	"images/internal/app/handlers/images/info"
+	"images/internal/app/handlers/images/upload"
 	tags_images_attach "images/internal/app/handlers/tags/images/attach"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
@@ -57,24 +56,22 @@ func main() {
 	router.Use(middleware.URLFormat)
 
 	router.Route("/images", func(r chi.Router) {
-		r.Post("/upload", post_images_upload.New(log, imageService, storage, &cfg.ImageMeta))
-		r.Post("/info", post_images_download.New(log, imageService, storage, &cfg.ImageMeta))
-		r.Route("/score", func(r chi.Router) {
-			r.Put("/update", post_images_score_update.New(log, storage))
-		})
+		r.Post("/upload", upload.New(log, imageService, storage, &cfg.ImageMeta))
+		r.Post("/info", info.New(log, imageService, storage, &cfg.ImageMeta))
+
 		r.Handle("/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
 	})
 
 	router.Route("/tags", func(r chi.Router) {
 		r.Route("/images", func(r chi.Router) {
-			r.Post("/attach", tags_images_attach.New(log, tagService, storage))
+			r.Post("/attach/{id}", tags_images_attach.New(log, tagService, storage))
 		})
 	})
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Host+":"+cfg.HTTPServer.Port))
 
-	done := make(chan os.Signal, 1)
-	signal.Notify(done, os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
+	defer stop()
 
 	srv := &http.Server{
 		Addr:         cfg.HTTPServer.Host + ":" + cfg.HTTPServer.Port,
@@ -84,25 +81,33 @@ func main() {
 		IdleTimeout:  cfg.HTTPServer.IdleTimeout,
 	}
 
+	serverErrors := make(chan error, 1)
+
 	go func() {
-		if err := srv.ListenAndServe(); err != nil {
-			log.Error("failed to start server")
+		log.Info("server started")
+		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+			serverErrors <- err
 		}
 	}()
 
-	log.Info("server started")
+	select {
+	case <-ctx.Done():
+		log.Info("shutdown signal received")
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 
-	<-done
-	log.Info("stopping server")
+		defer cancel()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
-	defer cancel()
-
-	if err := srv.Shutdown(ctx); err != nil {
-		log.Error("failed to stop server", sl.Err(err))
-		return
+		if err := srv.Shutdown(shutdownCtx); err != nil {
+			log.Error("failed to shutdown server gracefully", sl.Err(err))
+			if err := srv.Close(); err != nil {
+				log.Error("failed to close server", sl.Err(err))
+			}
+		}
+		log.Info("server stopped gracefully")
+	case err := <-serverErrors:
+		log.Error("server failed to start", sl.Err(err))
+		os.Exit(1)
 	}
-	log.Info("server stopped")
 }
 
 func setupLogger(env string) *slog.Logger {

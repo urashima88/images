@@ -1,4 +1,4 @@
-package post_images_upload
+package upload
 
 import (
 	"fmt"
@@ -33,12 +33,20 @@ type PartialSuccessResponse struct {
 type ImageUploader interface {
 	GenerateImageID() string
 	GetImageDimensions(imageData []byte) (int, int, error)
-	SaveImageToDisk(imageData []byte, imageDir, fileName string) error
 }
 
 type ImageDBUploader interface {
-	SaveImage(profileID, imageID string, width, height int, extension string) error
+	SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) error
 }
+
+const (
+	errNoExtension   = "file has no extension"
+	errFileTooLarge  = "file too large"
+	errInvalidFormat = "invalid image format"
+	errSaveFailed    = "failed to save image"
+	errOpenFailed    = "failed to open file"
+	errReadFailed    = "failed to read file"
+)
 
 func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -81,10 +89,10 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			return
 		}
 
-		if len(files) > imageMeta.PostMaxNumberImages {
+		if len(files) > imageMeta.MaxNumberImages {
 			log.Error("too many images", slog.Int("count", len(files)))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images allowed", imageMeta.PostMaxNumberImages)))
+			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images allowed", imageMeta.MaxNumberImages)))
 			return
 		}
 
@@ -94,11 +102,11 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 		var failedImages []image.FailedImageResponse
 
 		for i, fileHeader := range files {
-			img, err := processImage(fileHeader, profileID, imageUploader, imageDBUploader, imageMeta)
+			img, errMsg, err := processImage(fileHeader, profileID, imageUploader, imageDBUploader, imageMeta)
 			if err != nil {
 				failedImages = append(failedImages, image.FailedImageResponse{
 					FileName: fileHeader.Filename,
-					Error:    err.Error(),
+					Error:    errMsg,
 				})
 
 				log.Error("failed to process image",
@@ -160,45 +168,40 @@ func processImage(
 	imageUploader ImageUploader,
 	imageDBUploader ImageDBUploader,
 	imageMeta *app_config.ImageMeta,
-) (image.UploadImage, error) {
+) (image.UploadImage, string, error) {
 	const op = "handlers.upload_post_images.processImage"
 
 	extension := strings.TrimPrefix(filepath.Ext(fileHeader.Filename), ".")
 	if extension == "" {
-		return image.UploadImage{}, fmt.Errorf("%s: file has no extension", op)
+		return image.UploadImage{}, errNoExtension, fmt.Errorf("%s: file has no extension", op)
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s: failed to open file: %w", op, err)
+		return image.UploadImage{}, errOpenFailed, fmt.Errorf("%s: failed to open file: %w", op, err)
 	}
 	defer file.Close()
 
 	imageData, err := io.ReadAll(file)
 	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s: failed to read file: %w", op, err)
+		return image.UploadImage{}, errReadFailed, fmt.Errorf("%s: failed to read file: %w", op, err)
 	}
 
 	if len(imageData) > imageMeta.MaxImageSize<<20 {
-		return image.UploadImage{}, fmt.Errorf("%s: file too large", op)
+		return image.UploadImage{}, errFileTooLarge, fmt.Errorf("%s: file too large", op)
 	}
 
 	imageID := imageUploader.GenerateImageID()
 
 	width, height, err := imageUploader.GetImageDimensions(imageData)
 	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s: failed to get image dimensions: %w", op, err)
-	}
-
-	err = imageDBUploader.SaveImage(profileID, imageID, width, height, extension)
-	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s: failed to save image to DB: %w", op, err)
+		return image.UploadImage{}, errInvalidFormat, fmt.Errorf("%s: failed to get image dimensions: %w", op, err)
 	}
 
 	fileName := imageID + filepath.Ext(fileHeader.Filename)
-	err = imageUploader.SaveImageToDisk(imageData, imageMeta.ImageDirectory, fileName)
+	err = imageDBUploader.SaveImage(profileID, imageID, width, height, extension, imageData, imageMeta.ImageDirectory, fileName)
 	if err != nil {
-		return image.UploadImage{}, fmt.Errorf("%s failed to save image to disk: %w", op, err)
+		return image.UploadImage{}, errSaveFailed, fmt.Errorf("%s: failed to save image to DB: %w", op, err)
 	}
 
 	return image.UploadImage{
@@ -207,5 +210,5 @@ func processImage(
 		Width:     width,
 		Height:    height,
 		Extension: extension,
-	}, nil
+	}, "", nil
 }

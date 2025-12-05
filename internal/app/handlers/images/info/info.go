@@ -1,4 +1,4 @@
-package post_images_download
+package info
 
 import (
 	"fmt"
@@ -18,21 +18,21 @@ type Request struct {
 
 type Response struct {
 	response.Response
-	Images []image.DownloadImageResponse `json:"images"`
+	Images []image.ImageInfoResponse `json:"images"`
 }
 
-type ImageDownloader interface {
+type ImageInfoGetter interface {
 	CleanImageIDs(imageIDs []string) []string
 	GetImageURL(imageID, extension string) string
 }
 
-type ImageDBDownloader interface {
-	GetImagesByIDs(imageIDs []string) ([]image.DownloadImageResponse, error)
+type ImageInfoDBGetter interface {
+	GetImagesByIDs(imageIDs []string) ([]image.ImageInfoResponse, error)
 }
 
-func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader ImageDBDownloader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
+func New(log *slog.Logger, imageInfoGetter ImageInfoGetter, imageInfoDBGetter ImageInfoDBGetter, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.post_images.download.New"
+		const op = "handlers.images.info.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -54,14 +54,14 @@ func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader Im
 			return
 		}
 
-		if len(req.ImageIDs) > imageMeta.PostMaxNumberImages {
+		if len(req.ImageIDs) > imageMeta.MaxNumberImages {
 			log.Error("too many image_ids", slog.Int("count", len(req.ImageIDs)))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images for post", imageMeta.PostMaxNumberImages)))
+			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images for post", imageMeta.MaxNumberImages)))
 			return
 		}
 
-		cleanedImageIDs := ImageDownloader.CleanImageIDs(req.ImageIDs)
+		cleanedImageIDs := imageInfoGetter.CleanImageIDs(req.ImageIDs)
 		if len(cleanedImageIDs) == 0 {
 			log.Error("all image_ids are invalid")
 			render.Status(r, http.StatusBadRequest)
@@ -71,7 +71,7 @@ func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader Im
 
 		log.Info("featching images info", slog.Int("image_ids_count", len(cleanedImageIDs)))
 
-		imageInfos, err := imageDBDownloader.GetImagesByIDs(cleanedImageIDs)
+		imageInfos, err := imageInfoDBGetter.GetImagesByIDs(cleanedImageIDs)
 		if err != nil {
 			log.Error("failed to get images info")
 			render.Status(r, http.StatusInternalServerError)
@@ -83,22 +83,21 @@ func New(log *slog.Logger, ImageDownloader ImageDownloader, imageDBDownloader Im
 			log.Info("no images found", slog.Int("requested_count", len(cleanedImageIDs)))
 			render.JSON(w, r, Response{
 				Response: response.OK(),
-				Images:   []image.DownloadImageResponse{},
+				Images:   []image.ImageInfoResponse{},
 			})
 			return
 		}
 
-		imagesResponse := make([]image.DownloadImageResponse, len(imageInfos))
+		imagesResponse := make([]image.ImageInfoResponse, len(imageInfos))
 		for i, info := range imageInfos {
-			imagesResponse[i] = image.DownloadImageResponse{
+			imagesResponse[i] = image.ImageInfoResponse{
 				ImageID:   info.ImageID,
 				Width:     info.Width,
 				Height:    info.Height,
 				Extension: info.Extension,
-				Score:     info.Score,
 				Tags:      info.Tags,
 				CreatedAt: info.CreatedAt,
-				FileURL:   ImageDownloader.GetImageURL(info.ImageID, info.Extension),
+				FileURL:   imageInfoGetter.GetImageURL(info.ImageID, info.Extension),
 			}
 		}
 

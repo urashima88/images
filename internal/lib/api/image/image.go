@@ -10,16 +10,20 @@ type UploadImage struct {
 	Extension string
 }
 
+type ProcessImageError struct {
+	Root     error
+	Internal error
+}
+
 type FailedImageResponse struct {
 	FileName string `json:"file_name"`
 	Error    string `json:"error"`
 }
 
-type DownloadImageResponse struct {
+type ImageInfoResponse struct {
 	ImageID   string    `json:"image_id"`
 	Width     int       `json:"width"`
 	Height    int       `json:"height"`
-	Score     int       `json:"score"`
 	Extension string    `json:"extension"`
 	Tags      []string  `json:"tags"`
 	CreatedAt time.Time `json:"created_at"`

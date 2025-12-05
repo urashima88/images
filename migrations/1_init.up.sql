@@ -8,14 +8,12 @@ CREATE TABLE IF NOT EXISTS images (
     height INTEGER NOT NULL CHECK (height > 0),
     extension VARCHAR NOT NULL,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    score INTEGER NOT NULL DEFAULT 0
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
 CREATE INDEX IF NOT EXISTS images_profile_id_idx ON images (profile_id);
 CREATE INDEX IF NOT EXISTS images_image_id_idx ON images (image_id);
 CREATE INDEX IF NOT EXISTS images_created_at_idx ON images (created_at);
-CREATE INDEX IF NOT EXISTS images_score_idx ON images (score);
 
 CREATE TABLE IF NOT EXISTS tags (
     id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),

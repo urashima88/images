@@ -7,6 +7,8 @@ import (
 	"images/internal/lib/api/image"
 	"images/internal/lib/api/tag"
 	"log/slog"
+	"os"
+	"path/filepath"
 
 	"github.com/lib/pq"
 )
@@ -34,7 +36,7 @@ func New(cfg *app_config.Config) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string) error {
+func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) error {
 	const op = "storage.postgres.SaveImage"
 
 	query := `
@@ -47,14 +49,35 @@ func (s *Storage) SaveImage(profileID, imageID string, width, height int, extens
 		return fmt.Errorf("%s: failed to insert into images table: %w", op, err)
 	}
 
+	filePath := filepath.Join(imageDir, fileName)
+
+	err = os.WriteFile(filePath, imageData, 0644)
+	if err != nil {
+		if rollbackErr := s.DeleteImageFromDB(imageID); rollbackErr != nil {
+			return fmt.Errorf("%s: failed to write file: %w (rollback also failed: %v)", op, err, rollbackErr)
+		}
+		return fmt.Errorf("%s: failed to write file: %w", op, err)
+	}
+
 	return nil
 }
 
-func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.DownloadImageResponse, error) {
+func (s *Storage) DeleteImageFromDB(imageID string) error {
+	const op = "storage.postgres.DeleteImageFromDB"
+
+	query := `DELETE FROM images WHERE image_id = $1`
+	_, err := s.db.Exec(query, imageID)
+	if err != nil {
+		return fmt.Errorf("%s: failed to delete image: %w", op, err)
+	}
+	return nil
+}
+
+func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.ImageInfoResponse, error) {
 	const op = "storage.postgres.GetImagesByPostID"
 
 	query := `
-		SELECT i.image_id, i.width, i.height, i.extension, i.score, i.created_at,
+		SELECT i.image_id, i.width, i.height, i.extension, i.created_at,
 		COALESCE (
 			ARRAY_AGG(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}'::text[]
 		) AS tags
@@ -62,7 +85,7 @@ func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.DownloadImageRespon
 		LEFT JOIN image_tags it ON i.id = it.image_id
 		LEFT JOIN tags t ON it.tag_id = t.id
 		WHERE i.image_id = ANY($1)
-		GROUP BY i.id, i.image_id, i.width, i.height, i.extension, i.score, i.created_at
+		GROUP BY i.id, i.image_id, i.width, i.height, i.extension, i.created_at
 		ORDER BY i.created_at ASC
 	`
 
@@ -72,9 +95,9 @@ func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.DownloadImageRespon
 	}
 	defer rows.Close()
 
-	var images []image.DownloadImageResponse
+	var images []image.ImageInfoResponse
 	for rows.Next() {
-		var img image.DownloadImageResponse
+		var img image.ImageInfoResponse
 		var tags []string
 
 		err := rows.Scan(
@@ -82,7 +105,6 @@ func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.DownloadImageRespon
 			&img.Width,
 			&img.Height,
 			&img.Extension,
-			&img.Score,
 			&img.CreatedAt,
 			pq.Array(&tags),
 		)
@@ -283,26 +305,4 @@ func (s *Storage) GetTagsByIDs(tx *sql.Tx, tagIDs []string) ([]tag.Tag, error) {
 	}
 
 	return tags, nil
-}
-
-func (s *Storage) UpdateImageScore(imageID string, value int) (int, error) {
-	const op = "storage.postgres.UpdateImageScore"
-
-	query := `
-		UPDATE images
-		SET
-			score = score + $1,
-			updated_at = NOW()
-		WHERE image_id = $2
-		RETURNING score
-	`
-	var newScore int
-	err := s.db.QueryRow(query, value, imageID).Scan(&newScore)
-	if err != nil {
-		if err == sql.ErrNoRows {
-			return 0, fmt.Errorf("%s: image_id=%s not found", op, imageID)
-		}
-		return 0, fmt.Errorf("%s: failed to update image score: %w", op, err)
-	}
-	return newScore, nil
 }

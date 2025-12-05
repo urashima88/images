@@ -2,39 +2,39 @@ package migrator_config
 
 import (
 	"flag"
-	"os"
+	"strings"
 
-	"github.com/joho/godotenv"
+	"github.com/spf13/viper"
 )
 
 type Config struct {
 	Db
 	MigrationsPath  string
 	MigrationsTable string
+	ForceVersion    int
+	Steps           int
+	DropFlag        bool
+	VersionFlag     bool
+	DownFlag        bool
 }
 
 type Db struct {
-	Host         string
-	Port         string
-	User         string
-	Password     string
-	Name         string
-	SSLMode      string
-	ForceVersion int
-	Steps        int
-	DropFlag     bool
-	VersionFlag  bool
-	DownFlag     bool
+	Host     string
+	Port     string
+	User     string
+	Password string
+	Name     string
+	SSLMode  string
 }
 
 func MustLoad() *Config {
 	var (
-		path, migrationsPath, migrationsTable string
-		forceVersion, steps                   int
-		dropFlag, versionFlag, downFlag       bool
+		configPath, migrationsPath, migrationsTable string
+		forceVersion, steps                         int
+		dropFlag, versionFlag, downFlag             bool
 	)
 
-	flag.StringVar(&path, "config", "", "path to config file")
+	flag.StringVar(&configPath, "config", "", "path to config file")
 	flag.StringVar(&migrationsPath, "migrations-path", "", "path to migrations")
 	flag.StringVar(&migrationsTable, "migrations-table", "migrations", "name of migrations table")
 
@@ -46,32 +46,40 @@ func MustLoad() *Config {
 
 	flag.Parse()
 
-	err := godotenv.Load(path)
-	if err != nil {
-		panic("error loading .env: " + err.Error())
+	if configPath == "" {
+		panic("config file is empty")
 	}
 
-	var cfg Config
+	viper.SetConfigFile(configPath)
+	viper.SetConfigType("env")
+	viper.AutomaticEnv()
+	viper.SetEnvKeyReplacer(strings.NewReplacer(".", "_"))
 
-	cfg.Db.Host = os.Getenv("DB_HOST")
-	cfg.Db.Port = os.Getenv("DB_PORT")
-	cfg.Db.User = os.Getenv("DB_USER")
-	cfg.Db.Password = os.Getenv("DB_PASSWORD")
-	cfg.Db.Name = os.Getenv("DB_NAME")
-	cfg.Db.SSLMode = os.Getenv("SSL_MODE")
+	if err := viper.ReadInConfig(); err != nil {
+		panic("error reading config file: " + err.Error())
+	}
 
 	if migrationsPath == "" {
 		panic("migrations-path is required")
 	}
 
-	cfg.MigrationsPath = migrationsPath
-	cfg.MigrationsTable = migrationsTable
-
-	cfg.ForceVersion = forceVersion
-	cfg.Steps = steps
-	cfg.DropFlag = dropFlag
-	cfg.VersionFlag = versionFlag
-	cfg.DownFlag = downFlag
+	cfg := Config{
+		Db: Db{
+			Host:     viper.GetString("DB_HOST"),
+			Port:     viper.GetString("DB_PORT"),
+			User:     viper.GetString("DB_USER"),
+			Password: viper.GetString("DB_PASSWORD"),
+			Name:     viper.GetString("DB_NAME"),
+			SSLMode:  viper.GetString("SSL_MODE"),
+		},
+		MigrationsPath:  migrationsPath,
+		MigrationsTable: migrationsTable,
+		ForceVersion:    forceVersion,
+		Steps:           steps,
+		DropFlag:        dropFlag,
+		VersionFlag:     versionFlag,
+		DownFlag:        downFlag,
+	}
 
 	return &cfg
 }

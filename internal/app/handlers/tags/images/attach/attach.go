@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/render"
 	"github.com/google/uuid"
@@ -40,7 +41,6 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 		)
 
 		profileID := r.Header.Get("X-Profile-ID")
-		imageID := r.Header.Get("X-Image-ID")
 
 		if profileID == "" {
 			log.Error("profile_id header is required")
@@ -49,17 +49,25 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 			return
 		}
 
-		if imageID == "" {
-			log.Error("image_id header is required")
-			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("image_id header is required"))
-			return
-		}
-
 		if _, err := uuid.Parse(profileID); err != nil {
 			log.Error("invalid profile_id format")
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, response.Error("invalid profile_id format"))
+			return
+		}
+
+		imageID := chi.URLParam(r, "id")
+		if imageID == "" {
+			log.Error("image id is required in URL")
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, response.Error("image id is required in URL"))
+			return
+		}
+
+		if _, err := uuid.Parse(imageID); err != nil {
+			log.Error("invalid image id format", slog.String("image_id", imageID))
+			render.Status(r, http.StatusBadRequest)
+			render.JSON(w, r, response.Error("invalid image id format"))
 			return
 		}
 
