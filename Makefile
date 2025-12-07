@@ -11,7 +11,7 @@ build-app:
 	docker-compose up -d --build images_app
 
 build-db:
-	docker-compose up -d --build postgres_db
+	docker-compose up -d --build images_postgres_db
 
 MIGRATE_RUN = go run ./cmd/migrator --config=.env --migrations-path=./migrations
 

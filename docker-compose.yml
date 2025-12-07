@@ -1,3 +1,7 @@
+networks:
+  pixora:
+    external: true
+
 services:
   images_app:
     build:
@@ -7,12 +11,14 @@ services:
     ports:
       - ${APP_PORT}:${APP_PORT}
     environment:
-      - DB_HOST=postgres-db # container_name of db
+      - DB_HOST=images-postgres-db # container_name of db
+    networks:
+      - pixora
     env_file:
       - .env
     container_name: images-app
 
-  postgres_db:
+  images_postgres_db:
     image: postgres
     restart: always
     ports:
@@ -22,9 +28,11 @@ services:
       - POSTGRES_PASSWORD=${DB_PASSWORD}
       - POSTGRES_DB=${DB_NAME}
       - POSTGRES_SSL_MODE=${SSL_MODE}
+    networks:
+      - pixora
     volumes:
       - /var/lib/postgresql/18/docker
     env_file:
       - .env
-    container_name: postgres-db
+    container_name: images-postgres-db
     

@@ -8,7 +8,7 @@ RUN go mod download
 
 COPY . . 
 
-RUN mkdir -p ./images
+RUN mkdir -p ./media/images
 
 RUN CGO_ENABLED=0 GOOS=linux go build -ldflags="-s -w" -o /images-app ./cmd/app/
 
@@ -18,7 +18,7 @@ WORKDIR /
 
 COPY --from=build-stage /images-app /images-app
 
-COPY --from=build-stage /app/images ./images
+COPY --from=build-stage /app/media/images ./media/images
 
 COPY --from=build-stage /app/.env .
 

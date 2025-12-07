@@ -1,4 +1,4 @@
-package upload
+package images_upload
 
 import (
 	"fmt"
@@ -50,7 +50,7 @@ const (
 
 func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.post_images.upload.New"
+		const op = "handlers.images.upload.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -60,16 +60,18 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 		profileID := r.Header.Get("X-Profile-ID")
 
 		if profileID == "" {
-			log.Error("profile_id header is required")
+			log.Error("X-Profile-ID header is required")
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("profile_id header is required"))
+			render.JSON(w, r, response.Error("X-Profile-ID header is required"))
 			return
 		}
 
 		if _, err := uuid.Parse(profileID); err != nil {
-			log.Error("invalid profile_id format", slog.String("profile_id", profileID))
+			log.Error("invalid profile id format",
+				slog.String("profile_id", profileID),
+				slog.String("error", err.Error()))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("invalid profile_id format"))
+			render.JSON(w, r, response.Error("invalid profile id format"))
 			return
 		}
 
@@ -169,7 +171,7 @@ func processImage(
 	imageDBUploader ImageDBUploader,
 	imageMeta *app_config.ImageMeta,
 ) (image.UploadImage, string, error) {
-	const op = "handlers.upload_post_images.processImage"
+	const op = "handlers.images.upload.processImage"
 
 	extension := strings.TrimPrefix(filepath.Ext(fileHeader.Filename), ".")
 	if extension == "" {

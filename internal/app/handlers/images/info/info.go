@@ -1,4 +1,4 @@
-package info
+package images_info
 
 import (
 	"fmt"
@@ -69,11 +69,11 @@ func New(log *slog.Logger, imageInfoGetter ImageInfoGetter, imageInfoDBGetter Im
 			return
 		}
 
-		log.Info("featching images info", slog.Int("image_ids_count", len(cleanedImageIDs)))
+		log.Info("fetching images info", slog.Int("image_ids_count", len(cleanedImageIDs)))
 
 		imageInfos, err := imageInfoDBGetter.GetImagesByIDs(cleanedImageIDs)
 		if err != nil {
-			log.Error("failed to get images info")
+			log.Error("failed to get images info", slog.String("error", err.Error()))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, response.Error("failed to get images info"))
 			return

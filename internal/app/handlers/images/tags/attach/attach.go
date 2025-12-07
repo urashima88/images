@@ -1,4 +1,4 @@
-package tags_images_attach
+package images_tags_attach
 
 import (
 	"images/internal/lib/api/response"
@@ -22,18 +22,18 @@ type Response struct {
 	Tags    []tag.Tag `json:"tags"`
 }
 
-type TagUpdater interface {
+type TagAttacher interface {
 	CleanAndValidateTags(tags []string) []string
 }
 
-type TagDBUpdater interface {
+type TagDBAttacher interface {
 	ValidateImageOwnership(profileID, imageID string) (bool, error)
 	UpdateImageTags(imageID string, tagNames []string) ([]tag.Tag, error)
 }
 
-func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) http.HandlerFunc {
+func New(log *slog.Logger, tagAttacher TagAttacher, tagDBAttacher TagDBAttacher) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
-		const op = "handlers.tags.images.attach.New"
+		const op = "handlers.images.tags.attach.New"
 
 		log = log.With(
 			slog.String("op", op),
@@ -43,16 +43,16 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 		profileID := r.Header.Get("X-Profile-ID")
 
 		if profileID == "" {
-			log.Error("profile_id header is required")
+			log.Error("X-Profile-ID header is required")
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("profile_id header is required"))
+			render.JSON(w, r, response.Error("X-Profile-ID header is required"))
 			return
 		}
 
 		if _, err := uuid.Parse(profileID); err != nil {
-			log.Error("invalid profile_id format")
+			log.Error("invalid profile id format", slog.String("error", err.Error()))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error("invalid profile_id format"))
+			render.JSON(w, r, response.Error("invalid profile id format"))
 			return
 		}
 
@@ -65,7 +65,7 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 		}
 
 		if _, err := uuid.Parse(imageID); err != nil {
-			log.Error("invalid image id format", slog.String("image_id", imageID))
+			log.Error("invalid image id format", slog.String("image_id", imageID), slog.String("error", err.Error()))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, response.Error("invalid image id format"))
 			return
@@ -73,15 +73,15 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 
 		var req Request
 		if err := render.DecodeJSON(r.Body, &req); err != nil {
-			log.Error("failed to decode request body")
+			log.Error("failed to decode request body", slog.String("error", err.Error()))
 			render.Status(r, http.StatusBadRequest)
 			render.JSON(w, r, response.Error("invalid request body"))
 			return
 		}
 
-		ownsImage, err := tagDBCreator.ValidateImageOwnership(profileID, imageID)
+		ownsImage, err := tagDBAttacher.ValidateImageOwnership(profileID, imageID)
 		if err != nil {
-			log.Error("failed to validate image ownership")
+			log.Error("failed to validate image ownership", slog.String("error", err.Error()))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, response.Error("failed to validate image ownership"))
 			return
@@ -101,15 +101,15 @@ func New(log *slog.Logger, tagCreator TagUpdater, tagDBCreator TagDBUpdater) htt
 			return
 		}
 
-		cleanedTags := tagCreator.CleanAndValidateTags(req.Tags)
-
 		log.Info("processing tags",
 			slog.String("image_id", imageID),
-			slog.Int("tags_count", len(cleanedTags)))
+			slog.Int("tags_count", len(req.Tags)))
 
-		createdTags, err := tagDBCreator.UpdateImageTags(imageID, cleanedTags)
+		cleanedTags := tagAttacher.CleanAndValidateTags(req.Tags)
+
+		createdTags, err := tagDBAttacher.UpdateImageTags(imageID, cleanedTags)
 		if err != nil {
-			log.Error("failed to update tags")
+			log.Error("failed to update tags", slog.String("error", err.Error()))
 			render.Status(r, http.StatusInternalServerError)
 			render.JSON(w, r, response.Error("failed to update tags"))
 			return

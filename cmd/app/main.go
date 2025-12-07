@@ -4,9 +4,10 @@ import (
 	"context"
 	"fmt"
 	file_server_load "images/internal/app/handlers/file-server/load"
-	"images/internal/app/handlers/images/info"
-	"images/internal/app/handlers/images/upload"
-	tags_images_attach "images/internal/app/handlers/tags/images/attach"
+	images_info "images/internal/app/handlers/images/info"
+	images_tags_attach "images/internal/app/handlers/images/tags/attach"
+	images_upload "images/internal/app/handlers/images/upload"
+	tags_create "images/internal/app/handlers/tags/create"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
@@ -55,18 +56,17 @@ func main() {
 	router.Use(middleware.Recoverer)
 	router.Use(middleware.URLFormat)
 
-	router.Route("/images", func(r chi.Router) {
-		r.Post("/upload", upload.New(log, imageService, storage, &cfg.ImageMeta))
-		r.Post("/info", info.New(log, imageService, storage, &cfg.ImageMeta))
+	router.Route("/api", func(r chi.Router) {
+		r.Route("/v1", func(r chi.Router) {
+			r.Post("/images", images_upload.New(log, imageService, storage, &cfg.ImageMeta))
+			r.Post("/images/info", images_info.New(log, imageService, storage, &cfg.ImageMeta))
+			r.Post("/images/{id}/tags", images_tags_attach.New(log, tagService, storage))
 
-		r.Handle("/*", http.StripPrefix("/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
-	})
-
-	router.Route("/tags", func(r chi.Router) {
-		r.Route("/images", func(r chi.Router) {
-			r.Post("/attach/{id}", tags_images_attach.New(log, tagService, storage))
+			r.Post("/tags", tags_create.New(log, tagService, storage))
 		})
 	})
+
+	router.Handle("/media/images/*", http.StripPrefix("/media/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Host+":"+cfg.HTTPServer.Port))
 
