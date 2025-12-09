@@ -1,12 +1,10 @@
 package images_upload
 
 import (
-	"encoding/json"
 	"fmt"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/api/image"
 	"images/internal/lib/api/response"
-	"images/internal/lib/api/tag"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -32,10 +30,6 @@ type PartialSuccessResponse struct {
 	Failed       []image.FailedImageResponse `json:"failed"`
 }
 
-type TagCleaner interface {
-	CleanAndValidateTags(tags []string) []string
-}
-
 type ImageUploader interface {
 	GenerateImageID() string
 	GetImageDimensions(imageData []byte) (int, int, error)
@@ -44,7 +38,6 @@ type ImageUploader interface {
 
 type ImageDBUploader interface {
 	SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) (string, error)
-	CreateTags(tagNames []string) ([]tag.Tag, error)
 }
 
 const (
@@ -56,7 +49,7 @@ const (
 	errReadFailed    = "failed to read file"
 )
 
-func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, tagCleaner TagCleaner, imageMeta *app_config.ImageMeta) http.HandlerFunc {
+func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.images.upload.New"
 
@@ -106,26 +99,12 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			return
 		}
 
-		tagsData := r.FormValue("tags")
-
 		log.Info("processing images", slog.Int("image_count", len(files)))
 
 		var uploadedImages []image.Image
 		var failedImages []image.FailedImageResponse
 
 		for i, fileHeader := range files {
-			var imageTags []tag.Tag
-			if tagsData != "" {
-				tags, err := parseAndProcessTags(tagsData, fileHeader.Filename, tagCleaner, imageDBUploader)
-				if err != nil {
-					log.Error("failed to parse tags for image",
-						slog.String("filename", fileHeader.Filename),
-						slog.String("error", err.Error()))
-				} else {
-					imageTags = tags
-				}
-			}
-
 			img, errMsg, err := processImage(fileHeader, profileID, imageUploader, imageDBUploader, imageMeta)
 			if err != nil {
 				failedImages = append(failedImages, image.FailedImageResponse{
@@ -139,13 +118,7 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 					slog.String("error", err.Error()))
 				continue
 			}
-
-			img.Tags = imageTags
 			uploadedImages = append(uploadedImages, *img)
-
-			log.Debug("image processed successfully",
-				slog.String("image_id", img.ImageID),
-				slog.Int("tags_count", len(imageTags)))
 		}
 
 		if len(uploadedImages) == 0 {
@@ -180,35 +153,6 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			Images:   uploadedImages,
 		})
 	}
-}
-
-func parseAndProcessTags(tagData string, filename string, tagCleaner TagCleaner, imageDBUploader ImageDBUploader) ([]tag.Tag, error) {
-	const op = "handlers.images.upload.parseAndProcessTags"
-
-	var uploadTagsData tag.UploadTagsData
-	if err := json.Unmarshal([]byte(tagData), &uploadTagsData); err != nil {
-		return nil, fmt.Errorf("%s: failed to unmarshal tags data: %w", op, err)
-	}
-
-	var tagNames []string
-	if fileTags, ok := uploadTagsData.Tags[filename]; ok {
-		tagNames = append(tagNames, fileTags...)
-	}
-
-	if tagCleaner != nil && len(tagNames) > 0 {
-		tagNames = tagCleaner.CleanAndValidateTags(tagNames)
-	}
-
-	if len(tagNames) == 0 {
-		return []tag.Tag{}, nil
-	}
-
-	tags, err := imageDBUploader.CreateTags(tagNames)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to create tags: %w", op, err)
-	}
-
-	return tags, nil
 }
 
 func processImage(

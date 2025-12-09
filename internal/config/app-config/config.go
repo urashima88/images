@@ -15,7 +15,6 @@ type Config struct {
 	HTTPServer
 	ImageMeta
 	FileServer
-	TagMeta
 }
 
 type HTTPServer struct {
@@ -44,10 +43,6 @@ type ImageMeta struct {
 type FileServer struct {
 	Host        string
 	CacheMaxAge string
-}
-
-type TagMeta struct {
-	MaxTagLength int
 }
 
 var envs = []string{"local", "dev", "prod"}
@@ -100,9 +95,6 @@ func MustLoad() *Config {
 		FileServer: FileServer{
 			Host:        viper.GetString("FILE_SERVER_HOST"),
 			CacheMaxAge: viper.GetString("CACHE_MAX_AGE"),
-		},
-		TagMeta: TagMeta{
-			MaxTagLength: viper.GetInt("MAX_TAG_LENGTH"),
 		},
 	}
 

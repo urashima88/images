@@ -14,12 +14,3 @@ CREATE INDEX IF NOT EXISTS images_profile_id_idx ON images (profile_id);
 CREATE INDEX IF NOT EXISTS images_image_id_idx ON images (image_id);
 CREATE INDEX IF NOT EXISTS images_created_at_idx ON images (created_at);
 
-CREATE TABLE IF NOT EXISTS tags (
-    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-    name TEXT NOT NULL UNIQUE CHECK (name <> ''),
-    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);
-
-CREATE INDEX tags_name_idx ON tags (name);
-CREATE UNIQUE INDEX tags_name_unique ON tags (name);
-
