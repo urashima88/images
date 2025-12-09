@@ -7,3 +7,7 @@ type Tag struct {
 	Name      string    `json:"name"`
 	CreatedAt time.Time `json:"created_at,omitempty"`
 }
+
+type UploadTagsData struct {
+	Tags map[string][]string `json:"tags"`
+}

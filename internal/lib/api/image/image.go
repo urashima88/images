@@ -1,18 +1,17 @@
 package image
 
-import "time"
+import (
+	"images/internal/lib/api/tag"
+)
 
-type UploadImage struct {
-	ProfileID string
-	ImageID   string
-	Width     int
-	Height    int
-	Extension string
-}
-
-type ProcessImageError struct {
-	Root     error
-	Internal error
+type Image struct {
+	ImageID   string    `json:"image_id"`
+	Width     int       `json:"width"`
+	Height    int       `json:"height"`
+	Extension string    `json:"extension"`
+	Tags      []tag.Tag `json:"tags"`
+	CreatedAt string    `json:"created_at"`
+	FileURL   string    `json:"file_url,omitempty"`
 }
 
 type FailedImageResponse struct {
@@ -20,12 +19,7 @@ type FailedImageResponse struct {
 	Error    string `json:"error"`
 }
 
-type ImageInfoResponse struct {
-	ImageID   string    `json:"image_id"`
-	Width     int       `json:"width"`
-	Height    int       `json:"height"`
-	Extension string    `json:"extension"`
-	Tags      []string  `json:"tags"`
-	CreatedAt time.Time `json:"created_at"`
-	FileURL   string    `json:"file_url,omitempty"`
+type ImageWithTags struct {
+	ImageID string   `json:"image_id"`
+	TagIDs  []string `json:"tag_ids,omitempty"`
 }

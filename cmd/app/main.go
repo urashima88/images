@@ -5,14 +5,15 @@ import (
 	"fmt"
 	file_server_load "images/internal/app/handlers/file-server/load"
 	images_info "images/internal/app/handlers/images/info"
-	images_tags_attach "images/internal/app/handlers/images/tags/attach"
 	images_upload "images/internal/app/handlers/images/upload"
 	tags_create "images/internal/app/handlers/tags/create"
+	tags_info "images/internal/app/handlers/tags/info"
 	"images/internal/app/middleware/logger"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/logger/sl"
 	image_service "images/internal/services/image-service"
 	tag_service "images/internal/services/tag-service"
+	uuid_service "images/internal/services/uuid-service"
 	"images/internal/storage/postgres"
 	"log/slog"
 	"net/http"
@@ -47,6 +48,7 @@ func main() {
 
 	imageService := image_service.New(fmt.Sprintf("http://%s:%s/%s/", cfg.FileServer.Host, cfg.HTTPServer.Port, cfg.ImageMeta.ImageDirectory))
 	tagService := tag_service.New(cfg.TagMeta.MaxTagLength)
+	uuidService := uuid_service.New()
 
 	router := chi.NewRouter()
 
@@ -58,11 +60,11 @@ func main() {
 
 	router.Route("/api", func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
-			r.Post("/images", images_upload.New(log, imageService, storage, &cfg.ImageMeta))
-			r.Post("/images/info", images_info.New(log, imageService, storage, &cfg.ImageMeta))
-			r.Post("/images/{id}/tags", images_tags_attach.New(log, tagService, storage))
+			r.Post("/images", images_upload.New(log, imageService, storage, tagService, &cfg.ImageMeta))
+			r.Post("/images/info", images_info.New(log, imageService, storage, &cfg.ImageMeta, uuidService))
 
 			r.Post("/tags", tags_create.New(log, tagService, storage))
+			r.Post("/tags/info", tags_info.New(log, storage, uuidService))
 		})
 	})
 

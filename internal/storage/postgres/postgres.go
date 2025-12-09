@@ -9,6 +9,7 @@ import (
 	"log/slog"
 	"os"
 	"path/filepath"
+	"time"
 
 	"github.com/lib/pq"
 )
@@ -36,57 +37,51 @@ func New(cfg *app_config.Config) (*Storage, error) {
 	return &Storage{db: db}, nil
 }
 
-func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) error {
+func (s *Storage) SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) (string, error) {
 	const op = "storage.postgres.SaveImage"
+
+	tx, err := s.db.Begin()
+	if err != nil {
+		return "", fmt.Errorf("%s: failed to begin transaction: %w", op, err)
+	}
+	defer tx.Rollback()
 
 	query := `
 		INSERT INTO images (profile_id, image_id, width, height, extension)
 		VALUES ($1, $2, $3, $4, $5)
+		RETURNING created_at
 	`
 
-	_, err := s.db.Exec(query, profileID, imageID, width, height, extension)
+	var createdAt time.Time
+	err = tx.QueryRow(query, profileID, imageID, width, height, extension).Scan(&createdAt)
 	if err != nil {
-		return fmt.Errorf("%s: failed to insert into images table: %w", op, err)
+		return "", fmt.Errorf("%s: failed to save image: %w", op, err)
 	}
 
 	filePath := filepath.Join(imageDir, fileName)
-
-	err = os.WriteFile(filePath, imageData, 0644)
-	if err != nil {
-		if rollbackErr := s.DeleteImageFromDB(imageID); rollbackErr != nil {
-			return fmt.Errorf("%s: failed to write file: %w (rollback also failed: %v)", op, err, rollbackErr)
-		}
-		return fmt.Errorf("%s: failed to write file: %w", op, err)
+	if err := os.WriteFile(filePath, imageData, 0644); err != nil {
+		return "", fmt.Errorf("%s: failed to write file: %w", op, err)
 	}
 
-	return nil
-}
-
-func (s *Storage) DeleteImageFromDB(imageID string) error {
-	const op = "storage.postgres.DeleteImageFromDB"
-
-	query := `DELETE FROM images WHERE image_id = $1`
-	_, err := s.db.Exec(query, imageID)
-	if err != nil {
-		return fmt.Errorf("%s: failed to delete image: %w", op, err)
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("%s: failed to commit transaction: %w", op, err)
 	}
-	return nil
+
+	return createdAt.Format(time.RFC3339), nil
 }
 
-func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.ImageInfoResponse, error) {
+func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.Image, error) {
 	const op = "storage.postgres.GetImagesByPostID"
 
+	if len(imageIDs) == 0 {
+		return []image.Image{}, nil
+	}
+
 	query := `
-		SELECT i.image_id, i.width, i.height, i.extension, i.created_at,
-		COALESCE (
-			ARRAY_AGG(DISTINCT t.name ORDER BY t.name) FILTER (WHERE t.name IS NOT NULL), '{}'::text[]
-		) AS tags
-		FROM images i
-		LEFT JOIN image_tags it ON i.id = it.image_id
-		LEFT JOIN tags t ON it.tag_id = t.id
-		WHERE i.image_id = ANY($1)
-		GROUP BY i.id, i.image_id, i.width, i.height, i.extension, i.created_at
-		ORDER BY i.created_at ASC
+		SELECT image_id, width, height, extension, created_at
+		FROM images 
+		WHERE image_id = ANY($1)
+		ORDER BY created_at DESC
 	`
 
 	rows, err := s.db.Query(query, pq.Array(imageIDs))
@@ -95,10 +90,9 @@ func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.ImageInfoResponse, 
 	}
 	defer rows.Close()
 
-	var images []image.ImageInfoResponse
+	var images []image.Image
 	for rows.Next() {
-		var img image.ImageInfoResponse
-		var tags []string
+		var img image.Image
 
 		err := rows.Scan(
 			&img.ImageID,
@@ -106,205 +100,24 @@ func (s *Storage) GetImagesByIDs(imageIDs []string) ([]image.ImageInfoResponse, 
 			&img.Height,
 			&img.Extension,
 			&img.CreatedAt,
-			pq.Array(&tags),
 		)
+
 		if err != nil {
 			slog.Error("failed to scan image row",
 				slog.String("op", op),
 				slog.String("error", err.Error()))
 			continue
 		}
-		img.Tags = tags
+
+		img.Tags = []tag.Tag{}
 		images = append(images, img)
 	}
+
 	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
+		return nil, fmt.Errorf("%s: error iterating image rows: %w", op, err)
 	}
+
 	return images, nil
-}
-
-func (s *Storage) ValidateImageOwnership(profileID, imageID string) (bool, error) {
-	const op = "storage.postgres.ValidateImageOwnership"
-
-	query := `
-		SELECT EXISTS(
-			SELECT 1 FROM images
-			WHERE image_id = $1 AND profile_id = $2
-		)
-	`
-
-	var exists bool
-	err := s.db.QueryRow(query, imageID, profileID).Scan(&exists)
-	if err != nil {
-		return false, fmt.Errorf("%s: failed to validate ownership: %w", op, err)
-	}
-
-	return exists, nil
-}
-
-func (s *Storage) UpdateImageTags(imageID string, tagNames []string) ([]tag.Tag, error) {
-	const op = "storage.postgres.UpdateImageTags"
-
-	tx, err := s.db.Begin()
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to begin transaction: %w", op, err)
-	}
-	defer tx.Rollback()
-
-	var id string
-	err = tx.QueryRow("SELECT id FROM images WHERE image_id = $1", imageID).Scan(&id)
-	if err != nil {
-		return nil, fmt.Errorf("%s: image not found: %w", op, err)
-	}
-
-	tagIDs, err := s.GetOrSaveTags(tx, tagNames)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get/save tags: %w", op, err)
-	}
-
-	err = s.UpdateImageTagsRelations(tx, id, tagIDs)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to update image-tag relations: %w", op, err)
-	}
-
-	createdTags, err := s.GetTagsByIDs(tx, tagIDs)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get created tags: %w", op, err)
-	}
-
-	if err = tx.Commit(); err != nil {
-		return nil, fmt.Errorf("%s: failed to commit transaction: %w", op, err)
-	}
-	return createdTags, nil
-}
-
-func (s *Storage) GetOrSaveTags(tx *sql.Tx, tagNames []string) ([]string, error) {
-	const op = "storage.postgres.GetOrSaveTags"
-
-	if len(tagNames) == 0 {
-		return []string{}, nil
-	}
-
-	_, err := tx.Exec(`
-		CREATE TEMP TABLE temp_tags (name TEXT) ON COMMIT DROP
-	`)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to create temp table: %w", op, err)
-	}
-
-	stmt, err := tx.Prepare(pq.CopyIn("temp_tags", "name"))
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to prepare copy statement: %w", op, err)
-	}
-
-	for _, name := range tagNames {
-		_, err = stmt.Exec(name)
-		if err != nil {
-			return nil, fmt.Errorf("%s: failed to insert tag %s into temp table: %w", op, name, err)
-		}
-	}
-
-	_, err = stmt.Exec()
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to insert tags into temp table: %w", op, err)
-	}
-	stmt.Close()
-
-	query := `
-			WITH inserted_tags AS (
-				INSERT INTO tags (name)
-				SELECT DISTINCT name FROM temp_tags
-				ON CONFLICT (name) DO NOTHING
-				RETURNING id, name
-			)
-			SELECT id FROM inserted_tags
-			UNION ALL
-			SELECT t.id FROM tags t
-			INNER JOIN temp_tags tt 
-			ON t.name = tt.name
-	`
-
-	rows, err := tx.Query(query)
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to upsert into tags table: %w", op, err)
-	}
-	defer rows.Close()
-
-	var tagIDs []string
-	for rows.Next() {
-		var id string
-		if err := rows.Scan(&id); err != nil {
-			return nil, fmt.Errorf("%s: failed to scan tag id: %w", op, err)
-		}
-		tagIDs = append(tagIDs, id)
-	}
-
-	if err = rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
-	}
-
-	return tagIDs, nil
-}
-
-func (s *Storage) UpdateImageTagsRelations(tx *sql.Tx, imageID string, tagIDs []string) error {
-	const op = "storage.postgres.UpdateImageTagsRelations"
-
-	deleteQuery := `DELETE FROM image_tags WHERE image_id = $1`
-	_, err := tx.Exec(deleteQuery, imageID)
-	if err != nil {
-		return fmt.Errorf("%s: failed to delete old tags: %w", op, err)
-	}
-
-	if len(tagIDs) == 0 {
-		return nil
-	}
-
-	insertQuery := `
-		INSERT INTO image_tags (image_id, tag_id)
-		SELECT $1, unnest($2::uuid[])
-	`
-
-	_, err = tx.Exec(insertQuery, imageID, pq.Array(tagIDs))
-	if err != nil {
-		return fmt.Errorf("%s: failed to insert into new tags: %w", op, err)
-	}
-	return nil
-}
-
-func (s *Storage) GetTagsByIDs(tx *sql.Tx, tagIDs []string) ([]tag.Tag, error) {
-	const op = "storage.postgres.GetTagsByIDs"
-
-	if len(tagIDs) == 0 {
-		return []tag.Tag{}, nil
-	}
-
-	query := `
-		SELECT id, name, created_at
-		FROM tags
-		WHERE id = ANY($1)
-		ORDER BY name
-	`
-
-	rows, err := tx.Query(query, pq.Array(tagIDs))
-	if err != nil {
-		return nil, fmt.Errorf("%s: failed to get tags by IDs: %w", op, err)
-	}
-	defer rows.Close()
-
-	var tags []tag.Tag
-	for rows.Next() {
-		var t tag.Tag
-		if err := rows.Scan(&t.ID, &t.Name, &t.CreatedAt); err != nil {
-			return nil, fmt.Errorf("%s: error scan tag: %w", op, err)
-		}
-		tags = append(tags, t)
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("%s: error iterating rows: %w", op, err)
-	}
-
-	return tags, nil
 }
 
 func (s *Storage) CreateTags(tagNames []string) ([]tag.Tag, error) {
@@ -378,6 +191,45 @@ func (s *Storage) CreateTags(tagNames []string) ([]tag.Tag, error) {
 
 	if err = tx.Commit(); err != nil {
 		return nil, fmt.Errorf("%s: failed to commit transaction: %w", op, err)
+	}
+
+	return tags, nil
+}
+
+func (s *Storage) GetTagsByIDs(tagIDs []string) ([]tag.Tag, error) {
+	const op = "storage.postgres.GetTagsByIDs"
+
+	if len(tagIDs) == 0 {
+		return []tag.Tag{}, nil
+	}
+
+	query := `
+		SELECT id, name, created_at
+		FROM tags
+		WHERE id = ANY($1)
+		ORDER BY name
+	`
+
+	rows, err := s.db.Query(query, pq.Array(tagIDs))
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to get tags by IDs: %w", op, err)
+	}
+	defer rows.Close()
+
+	var tags []tag.Tag
+	for rows.Next() {
+		var tag tag.Tag
+		if err := rows.Scan(&tag.ID, &tag.Name, &tag.CreatedAt); err != nil {
+			slog.Error("failed to scan tag row",
+				slog.String("op", op),
+				slog.String("error", err.Error()))
+			continue
+		}
+		tags = append(tags, tag)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("%s: error iterating tag rows: %w", op, err)
 	}
 
 	return tags, nil

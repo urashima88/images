@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"fmt"
 	"image"
-	"strings"
 
 	_ "image/gif"
 	_ "image/jpeg"
@@ -37,24 +36,10 @@ func (i *ImageService) GetImageDimensions(imageData []byte) (width, height int, 
 	return config.Width, config.Height, nil
 }
 
-func (i *ImageService) CleanImageIDs(imageIDs []string) []string {
-	var cleaned []string
-	seen := make(map[string]bool)
-
-	for _, id := range imageIDs {
-		id := strings.TrimSpace(id)
-		if id == "" {
-			continue
-		}
-
-		if !seen[id] {
-			seen[id] = true
-			cleaned = append(cleaned, id)
-		}
-	}
-	return cleaned
-}
-
 func (i *ImageService) GetImageURL(imageID, extension string) string {
+	if i.BaseURL == "" {
+		return ""
+	}
+
 	return fmt.Sprintf(i.BaseURL + imageID + "." + extension)
 }

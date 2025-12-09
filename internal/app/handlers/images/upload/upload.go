@@ -1,10 +1,12 @@
 package images_upload
 
 import (
+	"encoding/json"
 	"fmt"
 	app_config "images/internal/config/app-config"
 	"images/internal/lib/api/image"
 	"images/internal/lib/api/response"
+	"images/internal/lib/api/tag"
 	"io"
 	"log/slog"
 	"mime/multipart"
@@ -19,24 +21,30 @@ import (
 
 type Response struct {
 	response.Response
-	ImageIDs []string `json:"image_ids"`
+	Images []image.Image `json:"images"`
 }
 
 type PartialSuccessResponse struct {
 	response.Response
-	ImageIDs     []string                    `json:"image_ids"`
+	Images       []image.Image               `json:"images"`
 	SuccessCount int                         `json:"success_count"`
 	FailedCount  int                         `json:"failed_count"`
 	Failed       []image.FailedImageResponse `json:"failed"`
 }
 
+type TagCleaner interface {
+	CleanAndValidateTags(tags []string) []string
+}
+
 type ImageUploader interface {
 	GenerateImageID() string
 	GetImageDimensions(imageData []byte) (int, int, error)
+	GetImageURL(imageID, extension string) string
 }
 
 type ImageDBUploader interface {
-	SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) error
+	SaveImage(profileID, imageID string, width, height int, extension string, imageData []byte, imageDir, fileName string) (string, error)
+	CreateTags(tagNames []string) ([]tag.Tag, error)
 }
 
 const (
@@ -48,7 +56,7 @@ const (
 	errReadFailed    = "failed to read file"
 )
 
-func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
+func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, tagCleaner TagCleaner, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.images.upload.New"
 
@@ -98,12 +106,26 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			return
 		}
 
+		tagsData := r.FormValue("tags")
+
 		log.Info("processing images", slog.Int("image_count", len(files)))
 
-		var uploadedImages []image.UploadImage
+		var uploadedImages []image.Image
 		var failedImages []image.FailedImageResponse
 
 		for i, fileHeader := range files {
+			var imageTags []tag.Tag
+			if tagsData != "" {
+				tags, err := parseAndProcessTags(tagsData, fileHeader.Filename, tagCleaner, imageDBUploader)
+				if err != nil {
+					log.Error("failed to parse tags for image",
+						slog.String("filename", fileHeader.Filename),
+						slog.String("error", err.Error()))
+				} else {
+					imageTags = tags
+				}
+			}
+
 			img, errMsg, err := processImage(fileHeader, profileID, imageUploader, imageDBUploader, imageMeta)
 			if err != nil {
 				failedImages = append(failedImages, image.FailedImageResponse{
@@ -115,9 +137,15 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 					slog.Int("index", i),
 					slog.String("filename", fileHeader.Filename),
 					slog.String("error", err.Error()))
-			} else {
-				uploadedImages = append(uploadedImages, img)
+				continue
 			}
+
+			img.Tags = imageTags
+			uploadedImages = append(uploadedImages, *img)
+
+			log.Debug("image processed successfully",
+				slog.String("image_id", img.ImageID),
+				slog.Int("tags_count", len(imageTags)))
 		}
 
 		if len(uploadedImages) == 0 {
@@ -128,11 +156,6 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 		}
 
 		if len(failedImages) > 0 {
-			imageIDs := make([]string, len(uploadedImages))
-			for i, img := range uploadedImages {
-				imageIDs[i] = img.ImageID
-			}
-
 			log.Info("only a part of images uploaded successfully",
 				slog.Int("success_count", len(uploadedImages)),
 				slog.Int("failed_count", len(failedImages)))
@@ -140,7 +163,7 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			render.Status(r, http.StatusMultiStatus)
 			render.JSON(w, r, PartialSuccessResponse{
 				Response:     response.OK(),
-				ImageIDs:     imageIDs,
+				Images:       uploadedImages,
 				SuccessCount: len(uploadedImages),
 				FailedCount:  len(failedImages),
 				Failed:       failedImages,
@@ -152,16 +175,40 @@ func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBU
 			slog.Int("success_count", len(uploadedImages)),
 			slog.Int("total_count", len(files)))
 
-		imageIDs := make([]string, len(uploadedImages))
-		for i, img := range uploadedImages {
-			imageIDs[i] = img.ImageID
-		}
-
 		render.JSON(w, r, Response{
 			Response: response.OK(),
-			ImageIDs: imageIDs,
+			Images:   uploadedImages,
 		})
 	}
+}
+
+func parseAndProcessTags(tagData string, filename string, tagCleaner TagCleaner, imageDBUploader ImageDBUploader) ([]tag.Tag, error) {
+	const op = "handlers.images.upload.parseAndProcessTags"
+
+	var uploadTagsData tag.UploadTagsData
+	if err := json.Unmarshal([]byte(tagData), &uploadTagsData); err != nil {
+		return nil, fmt.Errorf("%s: failed to unmarshal tags data: %w", op, err)
+	}
+
+	var tagNames []string
+	if fileTags, ok := uploadTagsData.Tags[filename]; ok {
+		tagNames = append(tagNames, fileTags...)
+	}
+
+	if tagCleaner != nil && len(tagNames) > 0 {
+		tagNames = tagCleaner.CleanAndValidateTags(tagNames)
+	}
+
+	if len(tagNames) == 0 {
+		return []tag.Tag{}, nil
+	}
+
+	tags, err := imageDBUploader.CreateTags(tagNames)
+	if err != nil {
+		return nil, fmt.Errorf("%s: failed to create tags: %w", op, err)
+	}
+
+	return tags, nil
 }
 
 func processImage(
@@ -170,47 +217,48 @@ func processImage(
 	imageUploader ImageUploader,
 	imageDBUploader ImageDBUploader,
 	imageMeta *app_config.ImageMeta,
-) (image.UploadImage, string, error) {
+) (*image.Image, string, error) {
 	const op = "handlers.images.upload.processImage"
 
 	extension := strings.TrimPrefix(filepath.Ext(fileHeader.Filename), ".")
 	if extension == "" {
-		return image.UploadImage{}, errNoExtension, fmt.Errorf("%s: file has no extension", op)
+		return nil, errNoExtension, fmt.Errorf("%s: file has no extension", op)
 	}
 
 	file, err := fileHeader.Open()
 	if err != nil {
-		return image.UploadImage{}, errOpenFailed, fmt.Errorf("%s: failed to open file: %w", op, err)
+		return nil, errOpenFailed, fmt.Errorf("%s: failed to open file: %w", op, err)
 	}
 	defer file.Close()
 
 	imageData, err := io.ReadAll(file)
 	if err != nil {
-		return image.UploadImage{}, errReadFailed, fmt.Errorf("%s: failed to read file: %w", op, err)
+		return nil, errReadFailed, fmt.Errorf("%s: failed to read file: %w", op, err)
 	}
 
 	if len(imageData) > imageMeta.MaxImageSize<<20 {
-		return image.UploadImage{}, errFileTooLarge, fmt.Errorf("%s: file too large", op)
+		return nil, errFileTooLarge, fmt.Errorf("%s: file size %d exceeds limit %d", op, len(imageData), imageMeta.MaxImageSize<<20)
 	}
 
 	imageID := imageUploader.GenerateImageID()
 
 	width, height, err := imageUploader.GetImageDimensions(imageData)
 	if err != nil {
-		return image.UploadImage{}, errInvalidFormat, fmt.Errorf("%s: failed to get image dimensions: %w", op, err)
+		return nil, errInvalidFormat, fmt.Errorf("%s: failed to get image dimensions: %w", op, err)
 	}
 
 	fileName := imageID + filepath.Ext(fileHeader.Filename)
-	err = imageDBUploader.SaveImage(profileID, imageID, width, height, extension, imageData, imageMeta.ImageDirectory, fileName)
+	createdAt, err := imageDBUploader.SaveImage(profileID, imageID, width, height, extension, imageData, imageMeta.ImageDirectory, fileName)
 	if err != nil {
-		return image.UploadImage{}, errSaveFailed, fmt.Errorf("%s: failed to save image to DB: %w", op, err)
+		return nil, errSaveFailed, fmt.Errorf("%s: failed to save image to DB: %w", op, err)
 	}
 
-	return image.UploadImage{
-		ProfileID: profileID,
+	return &image.Image{
 		ImageID:   imageID,
 		Width:     width,
 		Height:    height,
 		Extension: extension,
+		CreatedAt: createdAt,
+		FileURL:   imageUploader.GetImageURL(imageID, extension),
 	}, "", nil
 }
