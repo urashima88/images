@@ -34,10 +34,11 @@ type Db struct {
 }
 
 type ImageMeta struct {
-	MaxImageSize    int
-	MaxMemory       int64
-	MaxNumberImages int
-	ImageDirectory  string
+	MaxImageSize        int
+	MaxMemory           int64
+	UploadNumberImages  int
+	InfoMaxNumberImages int
+	ImageDirectory      string
 }
 
 type FileServer struct {
@@ -87,10 +88,11 @@ func MustLoad() *Config {
 			SSLMode:  viper.GetString("SSL_MODE"),
 		},
 		ImageMeta: ImageMeta{
-			MaxImageSize:    viper.GetInt("MAX_IMAGE_SIZE"),
-			MaxMemory:       viper.GetInt64("MAX_MEMORY"),
-			MaxNumberImages: viper.GetInt("MAX_NUMBER_IMAGES"),
-			ImageDirectory:  viper.GetString("IMAGE_DIRECTORY"),
+			MaxImageSize:        viper.GetInt("MAX_IMAGE_SIZE"),
+			MaxMemory:           viper.GetInt64("MAX_MEMORY"),
+			UploadNumberImages:  viper.GetInt("UPLOAD_MAX_NUMBER_IMAGES"),
+			InfoMaxNumberImages: viper.GetInt("INFO_MAX_NUMBER_IMAGES"),
+			ImageDirectory:      viper.GetString("IMAGE_DIRECTORY"),
 		},
 		FileServer: FileServer{
 			Host:        viper.GetString("FILE_SERVER_HOST"),

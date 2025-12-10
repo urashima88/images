@@ -54,10 +54,10 @@ func New(log *slog.Logger, imageInfoGetter ImageInfoGetter, imageInfoDBGetter Im
 			return
 		}
 
-		if len(req.ImageIDs) > imageMeta.MaxNumberImages {
+		if len(req.ImageIDs) > imageMeta.InfoMaxNumberImages {
 			log.Error("too many images", slog.Int("count", len(req.ImageIDs)))
 			render.Status(r, http.StatusBadRequest)
-			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images per request", imageMeta.MaxNumberImages)))
+			render.JSON(w, r, response.Error(fmt.Sprintf("maximum %d images per request", imageMeta.InfoMaxNumberImages)))
 			return
 		}
 
