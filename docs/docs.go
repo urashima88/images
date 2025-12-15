@@ -22,6 +22,7 @@ const docTemplate = `{
                         "X-Profile-ID": []
                     }
                 ],
+                "description": "Allows to upload from 1 to 10 images in one request. Supported formats: JPEG, PNG, GIF. Maximum size of a single file: 20 MB.",
                 "consumes": [
                     "multipart/form-data"
                 ],
@@ -89,6 +90,7 @@ const docTemplate = `{
                         "X-Profile-ID": []
                     }
                 ],
+                "description": "Retrieves info for images by their IDs. Max number of image IDs per request: 200",
                 "consumes": [
                     "application/json"
                 ],

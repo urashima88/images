@@ -50,10 +50,7 @@ const (
 )
 
 // @Summary Upload images
-// @Description
-// Allows to upload from 1 to 10 images in one request.
-// Supported formats: JPEG, PNG, GIF
-// Maximum size of a single file: 20 MB.
+// @Description Allows to upload from 1 to 10 images in one request. Supported formats: JPEG, PNG, GIF. Maximum size of a single file: 20 MB.
 // @Tags Images
 // @Accept multipart/form-data
 // @Produce json

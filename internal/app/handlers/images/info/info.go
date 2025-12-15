@@ -31,9 +31,7 @@ type ImageInfoDBGetter interface {
 }
 
 // @Summary Get images info
-// @Description
-// Retrieves info for images by their IDs
-// Max number of image IDs per request: 200
+// @Description Retrieves info for images by their IDs. Max number of image IDs per request: 200
 // @Tags Images
 // @Accept json
 // @Produce json
@@ -43,7 +41,7 @@ type ImageInfoDBGetter interface {
 // @Success 200 {object} Response "Success with empty array (no images found)"
 // @Failure 400 {object} response.Response "Bad request - invalid JSON, no image IDs provided, all IDs are invalid, or too many IDs requested"
 // @Failure 500 {object} response.Response "Internal server error - database query failed"
-// @security X-Profile-ID
+// @Security X-Profile-ID
 // @Router /images/info [post]
 func New(log *slog.Logger, imageInfoGetter ImageInfoGetter, imageInfoDBGetter ImageInfoDBGetter, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
