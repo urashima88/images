@@ -49,6 +49,23 @@ const (
 	errReadFailed    = "failed to read file"
 )
 
+// @Summary Upload images
+// @Description
+// Allows to upload from 1 to 10 images in one request.
+// Supported formats: JPEG, PNG, GIF
+// Maximum size of a single file: 20 MB.
+// @Tags Images
+// @Accept multipart/form-data
+// @Produce json
+// @Param X-Profile-ID header string true "User profile UUID (v4 format)"
+// @Param images formData file true "Image files to download"
+// @Success 200 {object} Response "All images have been uploaded successfully"
+// @Success 207 {object} PartialSuccessResponse "Some of the images were uploaded successfully, some with errors"
+// @Failure 400 {object} response.Response "Validation error: missing header, invalid UUID, no files, too many files"
+// @Failure 422 {object} response.Response "None of the images could be processed"
+// @Failure 500 {object} response.Response "Internal server error"
+// @Security X-Profile-ID
+// @Router /images [post]
 func New(log *slog.Logger, imageUploader ImageUploader, imageDBUploader ImageDBUploader, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.images.upload.New"

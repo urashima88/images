@@ -35,3 +35,6 @@ go.work.sum
 # .vscode/
 
 ./images
+
+docs/swagger.json
+docs/swagger.yaml

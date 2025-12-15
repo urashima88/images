@@ -1,3 +1,12 @@
+// @title Image Service API
+// @version 1.0
+// @description Microservice for downloading, receiving information and storing images
+//
+// @host localhost:8090
+// @BasePath /api/v1
+//
+// @tag.name Images
+// @tag.description "Image operations: uploading and receiving information"
 package main
 
 import (
@@ -18,8 +27,11 @@ import (
 	"syscall"
 	"time"
 
+	_ "images/docs"
+
 	"github.com/go-chi/chi/v5"
 	"github.com/go-chi/chi/v5/middleware"
+	httpSwagger "github.com/swaggo/http-swagger"
 )
 
 const (
@@ -60,6 +72,10 @@ func main() {
 	})
 
 	router.Handle("/media/images/*", http.StripPrefix("/media/images/", file_server_load.New(log, &cfg.FileServer, http.Dir(cfg.ImageMeta.ImageDirectory))))
+
+	router.Get("/swagger/*", httpSwagger.Handler(
+		httpSwagger.URL("/swagger/doc.json"),
+	))
 
 	log.Info("starting server", slog.String("address", cfg.HTTPServer.Host+":"+cfg.HTTPServer.Port))
 
