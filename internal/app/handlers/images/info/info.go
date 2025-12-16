@@ -42,7 +42,7 @@ type ImageInfoDBGetter interface {
 // @Failure 400 {object} response.Response "Bad request - invalid JSON, no image IDs provided, all IDs are invalid, or too many IDs requested"
 // @Failure 500 {object} response.Response "Internal server error - database query failed"
 // @Security X-Profile-ID
-// @Router /images/info [post]
+// @Router /images/info [get]
 func New(log *slog.Logger, imageInfoGetter ImageInfoGetter, imageInfoDBGetter ImageInfoDBGetter, imageMeta *app_config.ImageMeta) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		const op = "handlers.images.info.New"

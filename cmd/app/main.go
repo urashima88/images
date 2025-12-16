@@ -67,7 +67,7 @@ func main() {
 	router.Route("/api", func(r chi.Router) {
 		r.Route("/v1", func(r chi.Router) {
 			r.Post("/images", images_upload.New(log, imageService, storage, &cfg.ImageMeta))
-			r.Post("/images/info", images_info.New(log, imageService, storage, &cfg.ImageMeta))
+			r.Get("/images/info", images_info.New(log, imageService, storage, &cfg.ImageMeta))
 		})
 	})
 

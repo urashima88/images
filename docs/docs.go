@@ -84,7 +84,7 @@ const docTemplate = `{
             }
         },
         "/images/info": {
-            "post": {
+            "get": {
                 "security": [
                     {
                         "X-Profile-ID": []
